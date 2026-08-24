@@ -67,6 +67,38 @@ build log (what broke, what changed, why), see `notes.md` in this same folder.
 | umask 027 | `scripts/common.sh` | New files aren't world-readable/writable by default |
 | Unattended security upgrades | `scripts/common.sh` | Known vulnerabilities get patched without manual intervention |
 
+## Sudo Password Handling
+
+SSH key authentication and `sudo`'s local password check are two separate
+systems — installing an SSH key for `devops` gets you *into* a VM, but says
+nothing about whether `sudo` will accept anything once you're there. Early
+in the build, `common.sh` created `devops` and gave it sudo group
+membership but never actually set a Linux password, so `sudo` had nothing
+to authenticate against at all — see `notes.md` (Day 4) for how this was
+found and fixed.
+
+**How it's set up now:** `common.sh` generates a random password per VM
+with `openssl rand -base64 12`, applies it with `chpasswd`, and prints it
+once to the `vagrant up` console output in a clearly marked block:
+
+```
+################################################################
+# [load-balancer] devops sudo password (SAVE THIS, shown once): <random>
+################################################################
+```
+
+**Why generated, not hardcoded:** a fixed password sitting in a script
+committed to a public repo would be a real credential leak the moment the
+repo is pushed. Generating it fresh per VM, per provisioning run, and only
+ever displaying it locally in the operator's own terminal keeps a real
+password requirement (satisfying the "sudo is password-protected" rubric
+item) without ever putting a secret in git history.
+
+**Practical implication:** these passwords only exist for the lifetime of
+a given VM. Every `vagrant destroy` + `vagrant up` generates fresh ones —
+old passwords written down from a previous build won't work after a
+rebuild, and that's expected, not a bug.
+
 ## Recommendations for Future Improvements
 
 - **TLS termination** at the load balancer (Let's Encrypt via certbot, or self-signed for the lab)
