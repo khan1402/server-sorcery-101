@@ -27,6 +27,7 @@ unless File.exist?(SSH_PUB_KEY_PATH)
 end
 
 Vagrant.configure("2") do |config|
+  config.vm.boot_timeout = 600
   NODES.each do |name, opts|
     config.vm.define name do |node|
       node.vm.box = IMAGE

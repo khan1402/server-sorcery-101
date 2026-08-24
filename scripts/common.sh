@@ -40,6 +40,18 @@ EOF
 chmod 440 /etc/sudoers.d/devops
 visudo -cf /etc/sudoers.d/devops
 
+echo "==> [$THIS_HOST] Setting a random local password for devops (needed for sudo)"
+# SSH key auth gets you INTO the box, but sudo checks a separate LOCAL password.
+# We never hardcode this in the repo - generate one fresh per VM and print it
+# once here so you can copy it down from the `vagrant up` output.
+DEVOPS_PASSWORD=$(openssl rand -base64 12)
+echo "devops:${DEVOPS_PASSWORD}" | chpasswd
+echo ""
+echo "    ################################################################"
+echo "    # [$THIS_HOST] devops sudo password (SAVE THIS, shown once): ${DEVOPS_PASSWORD}"
+echo "    ################################################################"
+echo ""
+
 echo "==> [$THIS_HOST] Hardening SSH daemon"
 SSHD_CONFIG=/etc/ssh/sshd_config
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
