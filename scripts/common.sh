@@ -40,6 +40,18 @@ EOF
 chmod 440 /etc/sudoers.d/devops
 visudo -cf /etc/sudoers.d/devops
 
+echo "==> [$THIS_HOST] Allowing password-free read-only UFW status checks only"
+# Everything else devops does with sudo (visudo, passwd, actually changing
+# firewall rules, etc.) still requires a password - this ONE narrowly-scoped
+# exception exists so validate/check-requirements.sh can verify UFW is
+# active over a non-interactive SSH session, where there's no way to type
+# a password in the first place.
+cat <<'EOF' > /etc/sudoers.d/devops-readonly
+devops ALL=(ALL) NOPASSWD: /usr/sbin/ufw status, /usr/sbin/ufw status verbose
+EOF
+chmod 440 /etc/sudoers.d/devops-readonly
+visudo -cf /etc/sudoers.d/devops-readonly
+
 echo "==> [$THIS_HOST] Setting a random local password for devops (needed for sudo)"
 # SSH key auth gets you INTO the box, but sudo checks a separate LOCAL password.
 # We never hardcode this in the repo - generate one fresh per VM and print it
@@ -70,6 +82,20 @@ cat <<'EOF' > /etc/profile.d/99-umask.sh
 umask 027
 EOF
 chmod 644 /etc/profile.d/99-umask.sh
+# profile.d only applies to interactive login shells. Non-interactive SSH
+# commands (e.g. `ssh host "cmd"`, used by validate/check-requirements.sh)
+# skip it entirely and fall back to PAM's default. Ubuntu ships a default
+# `session optional pam_umask.so` line in common-session with NO umask=
+# parameter, which was tripping up a naive "does pam_umask exist" check -
+# we need to make sure OUR value is actually set, not just that some
+# pam_umask line is present.
+if grep -q "pam_umask.so umask=" /etc/pam.d/common-session; then
+  sed -i 's/pam_umask\.so umask=[0-9]*/pam_umask.so umask=0027/' /etc/pam.d/common-session
+elif grep -q "pam_umask.so" /etc/pam.d/common-session; then
+  sed -i 's/pam_umask\.so/pam_umask.so umask=0027/' /etc/pam.d/common-session
+else
+  echo "session optional pam_umask.so umask=0027" >> /etc/pam.d/common-session
+fi
 
 echo "==> [$THIS_HOST] Installing and enabling UFW (default-deny baseline)"
 apt-get install -y ufw >/dev/null
