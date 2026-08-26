@@ -99,6 +99,39 @@ a given VM. Every `vagrant destroy` + `vagrant up` generates fresh ones —
 old passwords written down from a previous build won't work after a
 rebuild, and that's expected, not a bug.
 
+## File Ownership for Service Content
+
+Enforcing the umask policy above globally (see "Sudo Password Handling"
+context on how PAM applies it) had a real side effect worth documenting:
+static content and scripts created by `root` during provisioning are no
+longer world-readable by default. Two places this actually mattered:
+
+- **Web servers' `index.html`** — nginx's worker process runs as
+  `www-data`, which isn't in the file's owning group. Without an explicit
+  fix, this produced a live `403 Forbidden` when the load balancer proxied
+  to a web server, despite the nginx config itself being correct.
+- **App server's `app.py`** — the systemd service runs it as `User=devops`,
+  which similarly couldn't read a root-owned, group-restricted file.
+
+**Fix:** rather than loosen the global umask (which would weaken the
+security posture everywhere to fix a problem in two specific places),
+`role-web-server.sh` and `role-app-server.sh` explicitly `chown`/`chmod`
+just the files that need to be read by a different user than the one that
+created them:
+
+```bash
+chown www-data:www-data /var/www/html/index.html
+chmod 644 /var/www/html/index.html
+
+chown devops:devops /opt/app/app.py
+chmod 750 /opt/app/app.py
+```
+
+This keeps the strict umask intact as the default everywhere else, and
+only grants read access on a per-file basis where a specific service
+genuinely needs it - the same "explicit exception, not a blanket
+loosening" pattern used for the UFW status sudo rule above.
+
 ## Recommendations for Future Improvements
 
 - **TLS termination** at the load balancer (Let's Encrypt via certbot, or self-signed for the lab)

@@ -55,6 +55,16 @@ This will, per VM, in order:
 3. Run `scripts/common.sh` — creates the `devops` user, hardens SSH, sets up UFW, sets umask, enables auto security updates, writes `/etc/hosts` entries for name resolution
 4. Run the role-specific script (`role-load-balancer.sh`, `role-web-server.sh`, or `role-app-server.sh`)
 
+**Important — save the sudo passwords shown during setup.** Each VM gets a random local password for the `devops` user, generated fresh during provisioning and printed once to the console in a boxed block:
+
+```
+################################################################
+# [load-balancer] devops sudo password (SAVE THIS, shown once): <random>
+################################################################
+```
+
+SSH key auth gets you *into* a VM, but `sudo` checks a separate local password - without saving this, you can log in but won't be able to run anything with `sudo` on that VM. See [`docs/architecture.md`](docs/architecture.md) ("Sudo Password Handling") for why this exists. If you lose a password, there's no recovery - destroy and rebuild that one VM (`vagrant destroy <vm> -f && vagrant up <vm>`) to get a fresh one.
+
 ### Accessing the environment
 ```bash
 ssh -i ~/.ssh/devops_key devops@192.168.56.10   # load-balancer
@@ -122,6 +132,9 @@ Recommended (not implemented) next steps — WireGuard, monitoring, TLS terminat
 
 See [`docs/notes.md`](docs/notes.md) for the full build log. Headline items worth knowing before a review:
 
-- **`AllowUsers devops` + mid-provision `systemctl restart ssh`:** Vagrant's own provisioning connection uses the `vagrant` user. Restarting sshd after locking logins down to `devops` doesn't kill the *already-open* session Vagrant is using for that run, but it will break `vagrant provision` on a second run, since Vagrant reconnects as `vagrant` and gets rejected.
-- **UFW enabled before the SSH allow rule exists** can lock you out entirely — `common.sh` adds the SSH rule *before* `ufw --force enable` for exactly this reason.
-- **Two NICs per VM, both in use** — `eth0` (Vagrant/VirtualBox NAT, used for provisioning) and `eth1` (the private network, your static IP). Worth explaining explicitly rather than it looking like an oversight during review.
+- **`devops` had an SSH key but no local password.** Early on, `common.sh` created the `devops` user and installed an SSH key, but never actually set a Linux password - SSH key auth and `sudo`'s local password check are two completely separate systems, and disabling `PasswordAuthentication` in `sshd_config` has zero effect on what `sudo` checks. Fixed by generating a random password per VM at provisioning time (see "Setup & Installation" above and `docs/architecture.md`), rather than hardcoding one in the repo.
+- **The umask hardening (a rubric requirement) broke web content serving as a side effect.** Once umask 027 was genuinely enforced everywhere, root-created files like the web server's `index.html` and the app server's `app.py` stopped being readable by the non-root processes (`www-data` for nginx, `devops` for the systemd service) that needed to serve/run them - producing a live `403 Forbidden` through the load balancer despite the nginx config itself being correct. Fixed with explicit `chown`/`chmod` on just those specific files, rather than loosening the umask policy itself. Traced end-to-end via `curl -v`, the nginx error log, and `ls -la` on the actual file - full debugging trail in `docs/notes.md` (Day 5).
+- **`AllowUsers devops` + UFW's subnet restriction together permanently lock out Vagrant's own NAT-based access** (`vagrant ssh`, `vagrant provision`, `vagrant reload`) once `common.sh` has run on a VM - by design, not a bug. Any future admin access has to go through `ssh devops@<private-ip>` directly, and any script changes require a full `vagrant destroy` + `vagrant up` rather than live reprovisioning.
+- **UFW enabled before the SSH allow rule exists** can lock you out entirely - `common.sh` adds the SSH rule *before* `ufw --force enable` for exactly this reason.
+- **Two NICs per VM, both in use** - `eth0` (Vagrant/VirtualBox NAT, used for provisioning) and `eth1` (the private network, your static IP). Worth explaining explicitly rather than it looking like an oversight during review.
+- **VMs occasionally time out on first boot after a cold `vagrant halt` / `vagrant up` cycle**, even with `boot_timeout` raised to 900s - resolved every time by destroying and rebuilding just that one VM (`vagrant destroy <vm> -f && vagrant up <vm>`), sometimes needing 2-3 attempts. Not fully root-caused, but consistently fixable.
