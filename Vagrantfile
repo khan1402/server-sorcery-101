@@ -26,8 +26,20 @@ unless File.exist?(SSH_PUB_KEY_PATH)
         "Generate one first:  ssh-keygen -t ed25519 -f ~/.ssh/devops_key"
 end
 
+# Bonus functionality (Fail2Ban, WireGuard, Netdata) is off by default so the
+# core required environment is unaffected. Turn it on with:
+#   ENABLE_BONUS=true vagrant up
+ENABLE_BONUS = ENV["ENABLE_BONUS"] == "true"
+
+# Boot VMs one at a time instead of in parallel. Slower overall, but booting
+# all 4 simultaneously competes hard for host CPU/disk right when cloud-init
+# needs it most - this was the most likely real cause of repeated boot
+# timeouts, not anything wrong with the provisioning scripts themselves.
+ENV["VAGRANT_NO_PARALLEL"] = "1"
+
 Vagrant.configure("2") do |config|
-  config.vm.boot_timeout = 900 # 15 minutes, because some of the boxes are slow to boot
+  config.vm.boot_timeout = 1800 # 30 minutes, because cloud-init can be slow on first boot
+
   NODES.each do |name, opts|
     config.vm.define name do |node|
       node.vm.box = IMAGE
@@ -56,6 +68,12 @@ Vagrant.configure("2") do |config|
 
       # Role-specific configuration
       node.vm.provision "shell", path: "scripts/role-#{opts[:role]}.sh"
+
+      if ENABLE_BONUS
+        node.vm.provision "shell", path: "scripts/bonus-fail2ban.sh"
+        node.vm.provision "shell", path: "scripts/bonus-wireguard.sh"
+        node.vm.provision "shell", path: "scripts/bonus-netdata.sh"
+      end
     end
   end
 end
