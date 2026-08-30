@@ -24,7 +24,9 @@ server-sorcery-101/
 │   ├── role-load-balancer.sh # nginx reverse proxy + public-facing firewall rule
 │   ├── role-web-server.sh    # placeholder web app + LB-only firewall rule
 │   ├── role-app-server.sh    # placeholder core logic + web-tier-only firewall rule
-│   └── bonus-fail2ban.sh     # optional, not run by default
+│   ├── bonus-fail2ban.sh     # SSH brute-force protection (ENABLE_BONUS=true)
+│   ├── bonus-wireguard.sh    # VPN interface, per-VM keypair (ENABLE_BONUS=true)
+│   └── bonus-netdata.sh      # real-time monitoring dashboard (ENABLE_BONUS=true)
 ├── validate/
 │   └── check-requirements.sh # scripted version of the grading checklist
 └── docs/
@@ -124,9 +126,34 @@ sudo apt update && sudo apt list --upgradable
 
 ## 5. Bonus / Extra Functionality
 
-- `scripts/bonus-fail2ban.sh` — optional Fail2Ban setup for SSH brute-force protection. Not wired into `vagrant up` by default; run manually on a VM, or add it as a named provisioner in the Vagrantfile if you want it to run automatically.
+Three bonus categories are implemented — Intrusion Prevention (Fail2Ban), VPN (WireGuard), and Monitoring (Netdata). All three are off by default so the required core environment is unaffected; turn them on with a feature flag:
 
-Recommended (not implemented) next steps — WireGuard, monitoring, TLS termination — are covered in [`docs/architecture.md`](docs/architecture.md) under "Recommendations for Future Improvements."
+```bash
+ENABLE_BONUS=true vagrant up
+```
+
+**Important:** this environment variable only lasts for the current terminal session. If you open a fresh terminal (or after a reboot), you need to set it again before any `vagrant up` where you want bonus features included — otherwise Vagrant silently skips them with no error, which is easy to miss.
+
+### Fail2Ban (Intrusion Prevention)
+`scripts/bonus-fail2ban.sh` bans an IP for 1 hour after 5 failed SSH attempts within 10 minutes. Demonstrate with:
+```bash
+sudo fail2ban-client status sshd
+```
+
+### WireGuard (VPN)
+`scripts/bonus-wireguard.sh` installs WireGuard and brings up an active `wg0` interface on each VM with a real generated keypair, listening on `51820/udp` (allowed only from the lab subnet). **Scope note:** each VM has its own working WireGuard interface, but full mesh peering between all 4 VMs isn't configured — that requires cross-referencing every VM's public key into every other VM's config, which is complex to do reliably during independent, sequential provisioning. Demonstrate with:
+```bash
+sudo wg show
+```
+
+### Netdata (Monitoring)
+`scripts/bonus-netdata.sh` installs Netdata via Ubuntu's package (faster than the official kickstart installer) and configures it to bind to all interfaces, restricted by UFW to the lab subnet only — consistent with the "least exposure" design used everywhere else in this project. Since the host machine sits on that same subnet via VirtualBox's host-only adapter, no SSH tunnel is needed:
+```bash
+curl http://192.168.56.11:19999/api/v1/info
+# or open http://192.168.56.11:19999 directly in a browser
+```
+
+TLS termination and centralized logging remain genuinely unimplemented — see [`docs/architecture.md`](docs/architecture.md) under "Recommendations for Future Improvements."
 
 ## 6. Challenges & Lessons Learned
 
@@ -137,4 +164,6 @@ See [`docs/notes.md`](docs/notes.md) for the full build log. Headline items wort
 - **`AllowUsers devops` + UFW's subnet restriction together permanently lock out Vagrant's own NAT-based access** (`vagrant ssh`, `vagrant provision`, `vagrant reload`) once `common.sh` has run on a VM - by design, not a bug. Any future admin access has to go through `ssh devops@<private-ip>` directly, and any script changes require a full `vagrant destroy` + `vagrant up` rather than live reprovisioning.
 - **UFW enabled before the SSH allow rule exists** can lock you out entirely - `common.sh` adds the SSH rule *before* `ufw --force enable` for exactly this reason.
 - **Two NICs per VM, both in use** - `eth0` (Vagrant/VirtualBox NAT, used for provisioning) and `eth1` (the private network, your static IP). Worth explaining explicitly rather than it looking like an oversight during review.
-- **VMs occasionally time out on first boot after a cold `vagrant halt` / `vagrant up` cycle**, even with `boot_timeout` raised to 900s - resolved every time by destroying and rebuilding just that one VM (`vagrant destroy <vm> -f && vagrant up <vm>`), sometimes needing 2-3 attempts. Not fully root-caused, but consistently fixable.
+- **VMs occasionally time out on first boot after a cold `vagrant halt` / `vagrant up` cycle**, even with `boot_timeout` raised to 900s (later 1800s) - resolved every time by destroying and rebuilding just that one VM (`vagrant destroy <vm> -f && vagrant up <vm>`), sometimes needing 2-3 attempts. Not fully root-caused, but consistently fixable.
+- **Netdata's Ubuntu package binds to `127.0.0.1` only by default** - the UFW rule allowing the dashboard port from the lab subnet was correct but irrelevant, since the app itself never accepted outside connections in the first place. Fixed by explicitly configuring `bind to = 0.0.0.0`.
+- **`$env:ENABLE_BONUS="true"` only persists for the PowerShell session it's set in.** A fresh terminal silently skips the bonus provisioners with no error - easy to miss, since `vagrant up` completes "successfully" either way. See `docs/notes.md` (Day 6) for the full trace.

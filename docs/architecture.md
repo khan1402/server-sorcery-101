@@ -132,10 +132,22 @@ only grants read access on a per-file basis where a specific service
 genuinely needs it - the same "explicit exception, not a blanket
 loosening" pattern used for the UFW status sudo rule above.
 
+## Bonus Functionality Implemented
+
+Off by default (`ENABLE_BONUS=true vagrant up` to enable) so the required
+core environment is unaffected — see README.md section 5 for full details
+and demonstration commands. Summary:
+
+| Category | Tool | Scope |
+|---|---|---|
+| Intrusion Prevention | Fail2Ban | Bans IPs after 5 failed SSH attempts / 10 min, 1 hour ban |
+| VPN | WireGuard | Active `wg0` interface per VM with a real keypair; mesh peering between VMs not configured (see README for why) |
+| Monitoring | Netdata | Real-time dashboard per VM, restricted to the lab subnet via UFW |
+
 ## Recommendations for Future Improvements
 
 - **TLS termination** at the load balancer (Let's Encrypt via certbot, or self-signed for the lab)
-- **WireGuard** to encrypt the private network traffic itself, not just restrict who can reach it
-- **Netdata or Prometheus + Grafana** for real-time / historical resource monitoring
+- **Full WireGuard mesh peering** between all 4 VMs — each VM currently has a working interface individually, but cross-referencing every VM's public key into every other VM's config wasn't done (see "Bonus Functionality Implemented" above)
+- **Historical metrics** — Netdata gives real-time visibility per VM; Prometheus + Grafana would add long-term trend storage and a single unified dashboard across all 4 VMs
 - **Ansible** to replace the shell-script provisioners as the environment grows — easier to keep idempotent
 - **Centralized logging** so a compromised host's own logs can't be tampered with in place

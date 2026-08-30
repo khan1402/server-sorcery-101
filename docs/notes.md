@@ -223,6 +223,64 @@ machine, plus browser/editor overhead) - closing Chrome before the next
 
 ---
 
+## Day 6 — bonus features: Fail2Ban, WireGuard, Netdata
+
+**Did:** Implemented all three optional bonus categories, gated behind a
+single `ENABLE_BONUS=true` environment variable flag in the `Vagrantfile`
+so the required core environment stays unaffected by default (per the
+assignment's own suggested pattern for bonus functionality).
+
+**Problem 1 (Fail2Ban race condition):** First provisioning attempt on a
+VM failed with `ERROR Failed to access socket path: /var/run/fail2ban/
+fail2ban.sock`. The script called `systemctl enable --now fail2ban`
+immediately followed by `fail2ban-client status sshd` - a race condition
+where the status check ran before the service had actually finished
+starting and created its socket.
+
+**Fix 1:** Added a short retry loop (up to 10 seconds) polling
+`fail2ban-client status sshd` before treating it as ready, instead of
+checking immediately.
+
+**Problem 2 (Netdata unreachable from host):** After provisioning
+succeeded with no errors, `curl http://<vm-ip>:19999` returned
+"Connection refused" from the host, despite the UFW rule allowing it.
+Checked with `ss -tln` on the VM directly and found Netdata's Ubuntu
+package binds to `127.0.0.1` (localhost) by default - the UFW rule was
+correct but irrelevant, since the app itself never accepted connections
+from outside the VM in the first place.
+
+**Fix 2:** Explicitly wrote `/etc/netdata/netdata.conf` with
+`bind to = 0.0.0.0` and restarted the service. UFW remains the actual
+access control (still scoped to the lab subnet only) - the app now
+listens broadly, but only the firewall-permitted subnet can reach it.
+
+**Problem 3 (`ENABLE_BONUS` silently not applying):** After closing and
+reopening a terminal, ran `vagrant destroy app-server -f && vagrant up
+app-server` to fix an unrelated boot timeout - the VM came back up, but
+none of the three bonus scripts had run, no error shown. Root cause:
+`$env:ENABLE_BONUS="true"` in PowerShell only persists for the session it
+was set in. A fresh terminal starts without it, so the Vagrantfile's `if
+ENABLE_BONUS` check silently evaluated false and skipped those
+provisioners entirely - Vagrant doesn't warn when a conditional
+provisioner is skipped this way.
+
+**Fix 3:** No code fix needed - this is expected PowerShell behavior, not
+a bug. Documented clearly in the README as something to actively remember:
+set `$env:ENABLE_BONUS="true"` fresh in every new terminal session before
+any `vagrant up` where bonus features matter. Rebuilt `app-server` with
+the flag correctly set; all three bonus scripts then ran successfully and
+matched the other 3 VMs.
+
+**Also found:** documentation had drifted behind the actual implementation
+- `README.md` and `docs/architecture.md` both still described WireGuard
+and Netdata as "recommended, not implemented" after they'd actually been
+built and verified working. Updated both to accurately reflect current
+state, since a reviewer reading stale docs after seeing working bonus
+features live would reasonably question whether the rest of the
+documentation could be trusted either.
+
+---
+
 <!-- Add more entries as you go. Don't delete failed attempts - they're the
      most useful part of this file when you write up "challenges & lessons
      learned" later. -->
