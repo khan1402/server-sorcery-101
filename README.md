@@ -39,10 +39,11 @@ server-sorcery-101/
 ### Prerequisites
 - [VirtualBox](https://www.virtualbox.org/wiki/Downloads)
 - [Vagrant](https://developer.hashicorp.com/vagrant/downloads)
-- An SSH key pair for the `devops` user:
+- An SSH key pair for the `devops` user \u2014 this is what the Vagrantfile looks for before it will let `vagrant up` run, and what gets installed on every VM for admin access:
   ```bash
   ssh-keygen -t ed25519 -f ~/.ssh/devops_key
   ```
+  This creates two files in your own `~/.ssh/` folder: `devops_key` (private, keep secret) and `devops_key.pub` (public, gets copied onto the VMs automatically during provisioning). Press Enter twice at the passphrase prompts to leave it blank. Neither file is included in this repository \u2014 everyone who runs this project generates their own.
 
 ### Bring the environment up
 ```bash
