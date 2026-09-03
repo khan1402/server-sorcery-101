@@ -281,6 +281,3 @@ documentation could be trusted either.
 
 ---
 
-<!-- Add more entries as you go. Don't delete failed attempts - they're the
-     most useful part of this file when you write up "challenges & lessons
-     learned" later. -->

@@ -85,3 +85,4 @@ echo " ${PASS} passed, ${FAIL} failed"
 echo "=================================="
 
 [ "$FAIL" -eq 0 ]
+
