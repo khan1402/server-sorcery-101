@@ -21,6 +21,14 @@ cat <<'EOF' > /etc/netdata/netdata.conf
 [web]
 	bind to = 0.0.0.0
 EOF
+ 
+# apt installs Netdata's web files owned by root, but Netdata refuses to
+# serve files it doesn't itself own as a built-in security check - this
+# produces "Access to file is not permitted" in the browser even though
+# normal Linux file permissions would otherwise allow it. Fix ownership
+# to match the user Netdata actually runs as.
+chown -R netdata:netdata /usr/share/netdata/web
+ 
 systemctl restart netdata
  
 echo "==> Restricting the Netdata dashboard to the lab subnet only"
@@ -29,4 +37,4 @@ ufw allow from 192.168.56.0/24 to any port 19999 proto tcp
 HOSTIP=$(hostname -I | awk '{print $2}')
 echo "==> bonus-netdata.sh complete. View at: http://${HOSTIP}:19999"
  
- 
+
